@@ -1,0 +1,183 @@
+CLOUDCOST PILOT
+Implementation Guide
+A practical, phase-by-phase build plan for the AWS cloud cost monitoring and optimization platform
+Python 3.12 • Boto3 • AWS • PostgreSQL • Grafana • Docker • Terraform • GitHub Actions
+Kestra is not used in this implementation.
+1. Implementation objective
+This guide turns the CloudCost Pilot product specification into an executable development plan. It is written for implementation in Antigravity and for a developer working locally on a MacBook with an AWS account.
+The goal is to build a real, testable cloud cost monitoring and optimization application—not just a dashboard mock-up. Work in small milestones, test each module, and do not move to the next phase until the acceptance criteria for the current phase pass.
+Kestra is excluded. Initial scheduling uses Linux/macOS cron. AWS Lambda is optional and should only be introduced after the local workflow is reliable.
+Collect actual AWS cost and usage data from Cost Explorer.
+Discover EC2 instances and EBS volumes and collect EC2 CPU metrics from CloudWatch.
+Generate explainable, human-reviewed optimization recommendations.
+Persist history in PostgreSQL and visualize it in Grafana.
+Package local services with Docker Compose and add Terraform and GitHub Actions as later production-engineering steps.
+2. Final technology choices and scope
+Keep the initial backend simple: Python 3.12, Boto3, standard-library command-line scripts, PostgreSQL when persistence is introduced, and Grafana for visualization. Add FastAPI only if a web application or external API is required; it is not a prerequisite for Phase 1.
+Use AWS APIs in read-only mode. Do not add permissions for terminating instances, deleting volumes, changing instance types, or modifying production infrastructure.
+The first milestone should work without Docker, PostgreSQL, Grafana, Terraform, or a live deployment. It should collect cost data and write a JSON file. Mocked tests must run without AWS credentials.
+Technology
+Use
+When introduced
+AWS Cost Explorer + Boto3
+Actual cost and usage data
+Phase 1
+EC2, EBS and CloudWatch APIs
+Inventory and performance metrics
+Phase 2
+Python optimization modules
+Rules and recommendations
+Phase 3
+Cron
+Scheduled execution
+Phase 4
+Slack/email
+Notifications
+Phase 5
+PostgreSQL + Grafana
+History and dashboards
+Phase 6
+Docker + Compose
+Repeatable local services
+Phase 7
+Terraform + GitHub Actions
+IaC and CI/CD
+Phase 7
+AWS Lambda
+Optional serverless execution
+Later / optional
+3. Repository setup
+Create a clean repository named cloudcost-pilot. If Antigravity has already created files, inspect them before overwriting anything. Keep the repository free of credentials, local database files, generated private reports and Terraform state.
+mkdir cloudcost-pilotcd cloudcost-pilotmkdir -p app/aws app/analyzer app/database app/notificationsmkdir -p app/reports app/scheduler scripts testsmkdir -p dashboard/grafana terraformmkdir -p .github/workflows data reportspython3.12 -m venv .venvsource .venv/bin/activatepython --versionpython -m pip install --upgrade pip
+4. Python project configuration
+Use a virtual environment so project dependencies do not affect the system Python installation. Keep runtime dependencies and development dependencies clearly separated. Pin tested versions before publishing a reproducible release.
+# requirements.txt — initial Phase 1 dependenciesboto3python-dotenv# Install development toolspython -m pip install pytest ruff# Install project dependenciespython -m pip install -r requirements.txt
+4.1 Suggested pyproject.toml
+Configure Ruff and Pytest in pyproject.toml. Antigravity should keep the settings consistent with the Python version used by the project.
+[project]name = "cloudcost-pilot"version = "0.1.0"description = "AWS cloud cost monitoring and optimization"requires-python = ">=3.12"[tool.ruff]line-length = 100target-version = "py312"[tool.pytest.ini_options]testpaths = ["tests"]pythonpath = ["."]
+5. AWS account and IAM setup
+Create a dedicated IAM identity for CloudCost Pilot rather than using the AWS root account. For local development, prefer an AWS CLI named profile, IAM Identity Center, or short-lived credentials. For an AWS-hosted deployment, use an IAM role.
+The policy below is a starting point for the APIs used by the initial collectors. Confirm the exact actions required as features are implemented. Cost Explorer is a billing API and is generally called through its us-east-1 endpoint. EC2 and CloudWatch calls use the target resource region.
+Do not add write permissions. Never put AWS access keys in Python source code, .env files committed to Git, Docker images, screenshots, or public issue reports.
+{  "Version": "2012-10-17",  "Statement": [    {      "Sid": "ReadCostExplorer",      "Effect": "Allow",      "Action": [        "ce:GetCostAndUsage",        "ce:GetDimensionValues"      ],      "Resource": "*"    },    {      "Sid": "ReadResourceInventory",      "Effect": "Allow",      "Action": [        "ec2:DescribeInstances",        "ec2:DescribeVolumes",        "ec2:DescribeRegions"      ],      "Resource": "*"    },    {      "Sid": "ReadCloudWatchMetrics",      "Effect": "Allow",      "Action": [        "cloudwatch:GetMetricData",        "cloudwatch:GetMetricStatistics"      ],      "Resource": "*"    },    {      "Sid": "ReadCallerIdentity",      "Effect": "Allow",      "Action": [        "sts:GetCallerIdentity"      ],      "Resource": "*"    }  ]}
+5.1 Configure and verify an AWS CLI profile
+Configure the profile using the credential method approved for the account. If using static access keys for a temporary learning setup, protect them locally, never share them, and rotate or remove them when no longer needed.
+aws configure --profile cloudcost-pilotaws sts get-caller-identity --profile cloudcost-pilot# Optional: list enabled regionsaws ec2 describe-regions   --profile cloudcost-pilot   --query 'Regions[].RegionName'   --output table
+6. Phase 1 — AWS Cost Explorer collector
+Implement Phase 1 before starting resource discovery. The collector should accept a start date, end date and granularity; call Cost Explorer; handle pagination; normalize the response; log collection metadata; and export JSON.
+AWS Cost Explorer GetCostAndUsage uses an inclusive start date and an exclusive end date. For example, to include all of 1–13 November, use Start=2026-11-01 and End=2026-11-14. The service may return delayed or revised billing data, so expose the reporting period and collection timestamp.
+# app/aws/cost_explorer.pyfrom __future__ import annotationsfrom datetime import date, datetime, timezonefrom typing import Anyimport boto3def create_cost_explorer_client(profile_name: str | None = None):    session = boto3.Session(profile_name=profile_name)    # Cost Explorer API endpoint is accessed in us-east-1.    return session.client("ce", region_name="us-east-1")def get_cost_and_usage(    client: Any,    start_date: date,    end_date_exclusive: date,    granularity: str = "DAILY",) -> dict:    if start_date >= end_date_exclusive:        raise ValueError("start_date must be earlier than end_date_exclusive")    results = []    request = {        "TimePeriod": {            "Start": start_date.isoformat(),            "End": end_date_exclusive.isoformat(),        },        "Granularity": granularity,        "Metrics": ["UnblendedCost"],        "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],    }    while True:        response = client.get_cost_and_usage(**request)        results.extend(response.get("ResultsByTime", []))        token = response.get("NextPageToken")        if not token:            break        request["NextPageToken"] = token    return {        "collected_at": datetime.now(timezone.utc).isoformat(),        "start_date": start_date.isoformat(),        "end_date_exclusive": end_date_exclusive.isoformat(),        "granularity": granularity,        "metric": "UnblendedCost",        "results": results,    }
+6.1 JSON output requirements
+Preserve the amount as a decimal string from AWS where possible; do not convert financial amounts to binary floating-point for accounting calculations. Preserve the currency unit returned by AWS. Store the service name and the exact time period returned by the API.
+Write output atomically: write to a temporary file and rename it after successful serialization. Include a collection timestamp and the request period.
+# Example output shape (illustrative; values are not live AWS data){  "collected_at": "2026-11-14T10:00:00+00:00",  "start_date": "2026-11-01",  "end_date_exclusive": "2026-11-14",  "granularity": "DAILY",  "metric": "UnblendedCost",  "results": [    {      "TimePeriod": {"Start": "2026-11-01", "End": "2026-11-02"},      "Groups": [        {          "Keys": ["Amazon Elastic Compute Cloud - Compute"],          "Metrics": {            "UnblendedCost": {"Amount": "1.25", "Unit": "USD"}          }        }      ]    }  ]}
+6.2 Phase 1 command-line interface
+Create scripts/collect_costs.py. It should parse --start, --end, --granularity, --profile and --output arguments. Validate the date range and supported granularity (DAILY or MONTHLY). Keep AWS calls out of argument-parsing code so the collector is straightforward to test.
+python scripts/collect_costs.py \  --start 2026-11-01 \  --end 2026-11-14 \  --granularity DAILY \  --profile cloudcost-pilot \  --output data/costs_daily.json
+7. Phase 2 — Resource discovery
+Build separate EC2, EBS and CloudWatch modules. Keep AWS API response parsing separate from recommendation rules. Support scanning more than one configured region, and record the region with every resource.
+Use DescribeInstances to retrieve instance metadata and DescribeVolumes to retrieve volume metadata. Handle pagination for APIs that return a NextToken. Do not assume an EC2 instance name tag exists.
+# EC2 inventory: core fields to normalize{  "account_id": "123456789012",  "region": "eu-west-1",  "instance_id": "i-example",  "name": "example-app",  "instance_type": "t3.small",  "state": "running",  "launch_time": "2026-11-01T10:00:00+00:00",  "availability_zone": "eu-west-1a",  "tags": {"Environment": "dev"}}# EBS inventory: core fields to normalize{  "account_id": "123456789012",  "region": "eu-west-1",  "volume_id": "vol-example",  "volume_type": "gp3",  "size_gib": 30,  "state": "available",  "attached_instance_id": null,  "encrypted": true}
+7.1 CloudWatch CPU metrics
+Retrieve CPUUtilization for each running EC2 instance over a configurable window, initially seven days. Record the metric statistic, period, start and end timestamps, and the number of datapoints. Missing datapoints must not be interpreted as zero CPU.
+Initial rules can flag an average CPU below 5% for review and an average between 5% and 20% for investigation. These are heuristics, not proof that an instance is wasteful. Consider workload seasonality and other metrics before making a recommendation.
+# Conceptual CloudWatch metric requestcloudwatch.get_metric_statistics(    Namespace="AWS/EC2",    MetricName="CPUUtilization",    Dimensions=[{"Name": "InstanceId", "Value": instance_id}],    StartTime=start_time,    EndTime=end_time,    Period=3600,    Statistics=["Average", "Maximum"],)
+8. Phase 3 — Optimization engine
+Implement a deterministic rule-based engine first. It should consume normalized resource and metric records and return recommendation objects. It must not call destructive AWS APIs.
+Each recommendation should include resource type and ID, account, region, category, explanation, priority, detected time, status and estimated savings only when a defensible pricing source exists.
+Use separate fields for actual AWS cost, estimated resource cost and estimated potential savings. An unattached EBS volume is a review candidate; it may be retained for backup, recovery or operational reasons.
+# Example recommendation record{  "recommendation_id": "generated-uuid",  "resource_type": "ebs_volume",  "resource_id": "vol-example",  "region": "eu-west-1",  "category": "unattached_storage",  "priority": "MEDIUM",  "title": "Review unattached EBS volume",  "explanation": "The volume is in the available state and has no attachment.",  "estimated_monthly_savings": null,  "currency": null,  "status": "NEW",  "detected_at": "2026-11-14T10:00:00+00:00"}
+9. Phase 4 — Scheduling and reliable jobs
+Start with cron on the development machine or a small Linux host. Use absolute paths and the project's virtual-environment Python interpreter. Set a consistent timezone, preferably UTC, and record timestamps in UTC.
+Make every collection job idempotent. Use a unique key or upsert strategy so rerunning a scan does not create duplicate inventory rows. Prevent overlapping executions with a lock or equivalent mechanism if a job can run longer than its schedule interval.
+Record every job in collection_runs with start time, finish time, status, records collected and a sanitized error message.
+# Example crontab: run cost collection daily at 06:000 6 * * * /absolute/path/cloudcost-pilot/.venv/bin/python /absolute/path/cloudcost-pilot/scripts/collect_costs.py --config /absolute/path/cloudcost-pilot/config.yaml >> /absolute/path/cloudcost-pilot/reports/cron.log 2>&1# Edit current user's crontabcrontab -e# Review configured jobscrontab -l
+10. Phase 5 — Budgets, anomaly detection and notifications
+Implement configurable budget thresholds such as 50%, 80% and 100%. Track the budget period and alert state so the same threshold does not generate repeated messages every time the daily collector runs.
+For a first anomaly detector, compare a daily cost value with a rolling baseline. Require enough historical observations, handle zero or missing baselines, and label the result as a signal for investigation—not a confirmed billing incident.
+Send Slack or email notifications through a separate notification module. A notification failure must not roll back successfully collected cost data.
+# Example configurable settings (illustrative)BUDGET_CURRENCY=USDMONTHLY_BUDGET=100BUDGET_WARNING_PERCENT=80BUDGET_CRITICAL_PERCENT=100ANOMALY_MULTIPLIER=2.5ANOMALY_MIN_HISTORY_DAYS=7# Secrets should be injected securely at runtime:SLACK_WEBHOOK_URL=SMTP_HOST=SMTP_USERNAME=SMTP_PASSWORD=
+11. Phase 6 — PostgreSQL data layer
+Introduce PostgreSQL after the collector and resource scanners have stable normalized outputs. Use migrations or a versioned schema file. Use parameterized SQL or a safe ORM, transactions and connection pooling.
+Suggested tables: aws_costs, ec2_instances, ec2_metrics, ebs_volumes, recommendations, budgets, alerts, collection_runs and reports. Add indexes for account, region, date, service and resource identifiers.
+Preserve source currency and reporting dates. Use NUMERIC for money values. Store raw API response snapshots only if needed, and define a retention policy.
+-- Illustrative core cost tableCREATE TABLE aws_costs (    id BIGSERIAL PRIMARY KEY,    account_id VARCHAR(32) NOT NULL,    service_name TEXT NOT NULL,    usage_date DATE NOT NULL,    amount NUMERIC(18, 6) NOT NULL,    currency VARCHAR(8) NOT NULL,    cost_metric VARCHAR(32) NOT NULL,    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),    UNIQUE (account_id, service_name, usage_date, currency, cost_metric));CREATE INDEX idx_aws_costs_account_date    ON aws_costs (account_id, usage_date);
+12. Phase 6 — Grafana dashboards
+Configure PostgreSQL as Grafana's data source. Create dashboards only after the database contains tested records. Use a read-only database account for Grafana.
+Create four dashboards: Cloud Cost Overview, Infrastructure, Optimization and Platform Operations. Each dashboard should show the relevant time range and data freshness.
+Do not label a Grafana panel as real-time if its source is delayed Cost Explorer data. Display the last successful collection time and reporting period.
+Cloud Cost Overview: month-to-date cost, daily trend, month comparison, cost by service.
+Infrastructure: EC2 counts by state, CPU utilization, EBS volume counts and unattached volume count.
+Optimization: recommendations by priority and status, estimated potential savings.
+Platform Operations: job success/failure, last collection time, records collected and recent alerts.
+13. Phase 7 — Docker and Docker Compose
+Use Docker Compose for the local application, PostgreSQL and Grafana. Persist PostgreSQL data in a named volume. Add health checks and wait for database readiness before running migrations or database-dependent jobs.
+Do not bake AWS credentials into the image. For local development, mount the AWS shared configuration directory read-only or use another secure runtime credential mechanism. Do not publish database ports to the public internet.
+# Typical local commandsdocker compose configdocker compose up -ddocker compose psdocker compose logs -fdocker compose down# Keep database data when stopping containers:docker compose down# Destructive: removes named volumes and their data.# Do not run unless you intentionally want to erase local database data:docker compose down -v
+14. Phase 7 — Terraform and GitHub Actions
+Terraform should be introduced only when the resources to provision are clearly defined. Start with IAM roles/policies and optional supporting resources. Run terraform fmt and terraform validate, inspect terraform plan, and obtain approval before apply. Protect state and never commit state files.
+GitHub Actions should initially run on pull requests and pushes: install Python, install dependencies, run Ruff, run Pytest and build the Docker image. Tests should use mocked AWS responses and should not require AWS credentials.
+For deployment to AWS, prefer GitHub Actions OIDC federation with a restricted trust policy rather than long-lived access keys. Add deployment only after the local test pipeline is reliable.
+# Example CI workflow outlinename: CIon:  push:  pull_request:jobs:  test:    runs-on: ubuntu-latest    steps:      - uses: actions/checkout@v4      - uses: actions/setup-python@v5        with:          python-version: "3.12"      - run: python -m pip install -r requirements.txt      - run: python -m pip install pytest ruff      - run: ruff check .      - run: pytest -q
+15. Testing strategy and quality gates
+Write tests alongside each feature. Use botocore Stubber or mocked Boto3 clients to simulate AWS responses. Do not make ordinary unit tests depend on a live AWS account or incur AWS charges.
+Test normal responses, empty responses, pagination, invalid date ranges, throttling, access denied, expired credentials, missing metrics and database failures.
+Safety tests should verify that the application does not call terminate, delete, modify or resize operations. Include tests proving that estimated savings are not mixed with actual charges.
+Unit tests: date handling, cost aggregation, CPU rules, unattached-volume detection, savings estimates and anomaly thresholds.
+Integration tests: database persistence, Grafana data-source connectivity and end-to-end collection with mocked AWS APIs.
+Quality checks: Ruff, Pytest, dependency scanning and Docker image build.
+Acceptance gate: all tests pass and no credentials are present in the repository before merging.
+16. Suggested API endpoints (only if FastAPI is added)
+FastAPI is optional. Add it when the dashboard or another client needs a supported backend API. Keep the initial collectors runnable as command-line jobs independently of the API.
+Method
+Endpoint
+Purpose
+GET
+/health
+Application health check
+GET
+/costs/summary
+Cost summary for a date range
+GET
+/costs/services
+Cost grouped by AWS service
+GET
+/resources/ec2
+EC2 inventory
+GET
+/resources/ebs
+EBS inventory
+GET
+/recommendations
+List recommendations and filter by status
+PATCH
+/recommendations/{id}
+Update review status only
+GET
+/alerts
+List alert history
+GET
+/jobs
+List collection run history
+17. Operational safety and cost controls
+CloudCost Pilot itself should be inexpensive to develop. Prefer local execution, mocked tests and existing AWS resources. Cost Explorer access may require enabling the service and may have associated pricing or account requirements; verify current AWS pricing before enabling additional features.
+Do not create EC2, RDS, NAT Gateway, load balancer or other billable infrastructure just to demonstrate the first milestone. If deploying later, define a budget, review every Terraform plan and remove test resources deliberately when finished.
+Keep the platform read-only for the entire initial portfolio release. Future remediation automation, if ever added, must be a separate feature with explicit permissions, human approval, audit logs and safeguards.
+Actual AWS costs and estimated resource costs are different data types.
+Stopped EC2 instances can still have attached EBS storage costs.
+Unattached EBS volumes may be needed for recovery or retention.
+Low CPU is a signal for review, not proof that a resource is safe to resize.
+Cost Explorer reporting can lag behind usage.
+Never automatically terminate instances or delete storage.
+18. Antigravity implementation prompt
+Paste the following instruction into Antigravity after opening the cloudcost-pilot repository. Ask it to implement one phase at a time and report tests and files changed.
+You are the senior Python and DevOps engineer implementing CloudCost Pilot.Read the CloudCost Pilot product specification and implementation guide first.Non-negotiable constraints:- Do not use Kestra.- Use Python 3.12 and Boto3.- Start with Phase 1 only: AWS Cost Explorer collection.- Do not create billable AWS infrastructure.- Do not add destructive AWS permissions or API calls.- Never hardcode or log AWS credentials.- Support mocked AWS tests with no live AWS account.- Keep actual AWS charges separate from estimated savings.- Use clear modules, type hints, structured logging and tests.Before coding:1. Inspect the repository and summarize its current state.2. Propose a short implementation plan.3. Identify any assumptions or missing configuration.Implement Phase 1:1. Project configuration and dependency setup.2. AWS profile/credential-chain support.3. STS caller identity validation.4. Cost Explorer client in us-east-1.5. Daily and monthly GetCostAndUsage collection.6. Grouping by AWS service.7. Pagination handling.8. JSON export with collection metadata.9. Structured logging and safe error handling.10. Pytest tests using mocked AWS responses.11. Documentation of the required read-only IAM permissions.Run Ruff and Pytest. Report exact commands, test results, created files and any limitations. Do not start Phase 2 until Phase 1 passes its acceptance checks.
+19. Phase completion checklist
+Use this checklist to decide whether the implementation is ready to move forward.
+Phase 1: real Cost Explorer collection works; daily/monthly outputs and tests pass.
+Phase 2: EC2, EBS and CloudWatch scanners return normalized records; missing metrics are handled safely.
+Phase 3: recommendations are explainable, reviewable and separate from actual cost data.
+Phase 4: scheduled jobs are idempotent, logged and failure-visible.
+Phase 5: thresholds, anomaly signals and notifications are tested and deduplicated.
+Phase 6: PostgreSQL history and Grafana dashboards show correct, timestamped data.
+Phase 7: Docker Compose works locally; Terraform is validated; GitHub Actions passes.

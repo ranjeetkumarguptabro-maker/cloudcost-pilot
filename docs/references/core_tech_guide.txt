@@ -1,0 +1,340 @@
+CLOUDCOST PILOT
+Core Technology Guide
+Cloud Cost Monitoring, Analysis & Optimization Platform
+Project technology reference • Architecture • Responsibilities • Integration
+1. Purpose of this document
+This document explains the technologies selected for CloudCost Pilot, why each one is needed, what responsibility it has, and how the technologies work together. It is intended as a learning and implementation reference while building the project in Antigravity.
+CloudCost Pilot will collect AWS cost and resource information, analyze it, identify potential optimization opportunities, store historical results, and present the information through dashboards and alerts.
+2. Technology stack at a glance
+Technology
+Role in CloudCost Pilot
+Status
+Amazon Web Services (AWS)
+Cloud provider and source of billing, infrastructure and performance data.
+Core
+AWS Cost Explorer
+Retrieves actual AWS cost and usage data.
+Core
+Python 3.12
+Implements collectors, analysis, recommendations and automation.
+Core
+Boto3
+Python SDK used to call AWS APIs.
+Core
+Amazon EC2 / EBS APIs
+Discover compute instances and block-storage volumes.
+Core
+Amazon CloudWatch
+Provides infrastructure performance metrics such as EC2 CPU utilization.
+Core
+PostgreSQL
+Stores historical costs, inventory, metrics, recommendations, alerts and job runs.
+Core
+Grafana
+Visualizes cost, infrastructure, optimization and operational data.
+Core
+Docker + Docker Compose
+Packages the application and runs local services consistently.
+Core
+Terraform
+Defines and provisions supported AWS infrastructure as code.
+Core
+GitHub Actions
+Runs automated quality checks, tests and image builds.
+Core
+Linux Cron
+Schedules recurring Python collection and reporting jobs.
+Core
+Pytest
+Tests calculations, rules, integrations and safety behavior.
+Supporting
+Ruff
+Checks Python code quality and style.
+Supporting
+FastAPI
+Optional API layer if the project needs application endpoints.
+Optional
+Slack / Email
+Delivers budget, anomaly and job-failure notifications.
+Integration
+AWS Lambda
+Optional serverless execution option for selected tasks in a later phase.
+Optional
+3. Core technologies explained
+3.1 Amazon Web Services (AWS)
+What it is: AWS is the cloud platform that hosts the infrastructure CloudCost Pilot observes. The project connects to an AWS account and reads billing, resource and monitoring information.
+Responsibilities:
+Provides the environment whose spending and resources are being monitored.
+Supplies APIs for cost data, EC2 instances, EBS volumes and CloudWatch metrics.
+Can host selected project components in a later deployment phase.
+How it is used: The first version connects to an existing AWS account using a dedicated, read-only IAM identity. Local development should not require creating expensive cloud infrastructure.
+Engineering note: AWS services can incur charges. Start with read-only API access and local development. Do not create paid infrastructure just to test the initial collector.
+3.2 AWS Cost Explorer
+What it is: AWS Cost Explorer is the AWS cost-management service used to retrieve historical and current-to-date cost and usage information available to the account.
+Responsibilities:
+Retrieve daily and monthly cost totals.
+Group costs by AWS service.
+Compare reporting periods.
+Provide the actual cost data used by the analytics module.
+How it is used: Python calls the Cost Explorer GetCostAndUsage API through Boto3. The collector requests a date range, granularity and grouping dimension, then normalizes the response before storing or exporting it.
+Important limitations: Cost Explorer data is not real-time and may be delayed. The application must show the reporting period, currency, cost metric and last collection time. Do not describe estimated resource prices as actual Cost Explorer charges.
+3.3 Python 3.12
+What it is: Python is the main programming language for the backend and automation logic.
+Responsibilities:
+Collect data from AWS APIs.
+Normalize and validate responses.
+Analyze costs and resource utilization.
+Generate optimization recommendations.
+Create JSON, CSV and report outputs.
+Run scheduled collection and reporting jobs.
+How it is used: The codebase is divided into modules such as aws, analyzer, database, notifications, reports and scheduler. Use functions with clear responsibilities, type hints, configuration validation and structured logging.
+Why Python: Python has a mature ecosystem for cloud automation, data processing, API integration and testing. It is suitable for building the project incrementally.
+3.4 Boto3
+What it is: Boto3 is the AWS SDK for Python. It allows Python programs to interact with AWS services through their APIs.
+Responsibilities:
+Create a Cost Explorer client.
+Describe EC2 instances and EBS volumes.
+Retrieve CloudWatch metrics.
+Read the AWS caller identity through STS.
+Handle paginated API responses where supported.
+How it is used: Use Boto3 clients for service APIs. Authentication should use the standard AWS credential provider chain, such as an AWS CLI profile locally and an IAM role in an AWS-hosted environment.
+Security note: Never place access keys in source code, commit them to Git, or bake them into a Docker image. Use least-privilege permissions and temporary credentials where possible.
+3.5 Amazon EC2 and EBS APIs
+What they are: Amazon EC2 provides virtual compute instances. Amazon EBS provides persistent block storage volumes that can be attached to EC2 instances. EBS inventory is accessed through the EC2 API.
+Responsibilities:
+Discover instance IDs, names, types, states, regions and tags.
+Identify stopped instances for review.
+Discover EBS volume size, type, state and attachment information.
+Identify volumes in the available state that are not attached.
+How they are used: The EC2 scanner calls DescribeInstances. The EBS scanner calls DescribeVolumes. Results are normalized into a common internal format and stored in PostgreSQL.
+Important limitation: A stopped EC2 instance generally stops incurring normal instance compute charges, but attached EBS storage and other associated services may still cost money. An unattached volume is a review candidate, not automatically safe to delete.
+3.6 Amazon CloudWatch
+What it is: CloudWatch is AWS's monitoring service. CloudCost Pilot uses it to retrieve infrastructure metrics, initially focusing on EC2 CPU utilization.
+Responsibilities:
+Retrieve CPUUtilization metrics.
+Calculate average and maximum CPU values over a selected time window.
+Provide evidence for underutilization recommendations.
+Support later operational alerting.
+How it is used: The Python CloudWatch module requests metrics for an instance and evaluation period. The analyzer interprets the returned datapoints using configurable rules.
+Important limitation: Low CPU alone does not prove that an instance is unnecessary. Workload patterns, memory, network, disk activity, business criticality and peak periods should also be considered before recommending a change.
+3.7 PostgreSQL
+What it is: PostgreSQL is the relational database used to retain historical information collected and generated by the platform.
+Responsibilities:
+Store daily and monthly cost records.
+Store EC2 and EBS inventory snapshots.
+Store CloudWatch metric summaries.
+Store optimization recommendations and their review status.
+Store budget settings, alerts, reports and collection-run history.
+How it is used: Python writes normalized records to PostgreSQL. Grafana queries the database to build dashboards. Use indexes, constraints and safe database access patterns to avoid duplicate or inconsistent records.
+Data design: Keep the original AWS-reported currency and reporting dates. Store estimated savings separately from actual costs. Use timestamps to track when data was collected.
+3.8 Grafana
+What it is: Grafana is the visualization and dashboard platform for CloudCost Pilot.
+Responsibilities:
+Display month-to-date spending and budget utilization.
+Visualize daily and monthly cost trends.
+Show service-level cost breakdowns.
+Display EC2 and EBS inventory metrics.
+Show recommendations, potential savings and collection health.
+How it is used: Configure PostgreSQL as a Grafana data source. Build separate dashboards for Cloud Cost Overview, Infrastructure, Optimization and Platform Operations.
+Important distinction: Grafana visualizes the data; it is not the source of AWS billing truth. The Python collectors and AWS APIs provide the underlying data.
+3.9 Docker
+What it is: Docker packages an application and its dependencies into containers so it can run consistently across supported environments.
+Responsibilities:
+Package the Python application.
+Run PostgreSQL locally.
+Run Grafana locally.
+Keep development environments reproducible.
+How it is used: Create a Dockerfile for the Python service and a Docker Compose configuration for the application, PostgreSQL and Grafana. Use environment-based configuration and persistent database volumes.
+Security note: Do not include AWS credentials in the image. Mount or inject credentials securely at runtime, and do not expose PostgreSQL or Grafana publicly by default.
+3.10 Terraform
+What it is: Terraform is an Infrastructure as Code tool. It describes infrastructure declaratively so that it can be reviewed and managed through version-controlled configuration.
+Responsibilities:
+Define a dedicated IAM role and policy.
+Define optional S3 report storage.
+Define optional CloudWatch log resources.
+Define optional Lambda and EventBridge resources in a later phase.
+How it is used: Store Terraform files in the terraform directory. Use variables, outputs and separate environments. Review terraform plan before applying changes.
+Safety note: Terraform can create billable infrastructure and modify or destroy resources. Do not run apply or destroy without reviewing the plan and obtaining approval. Protect state files and never commit sensitive state.
+3.1 Amazon Web Services (AWS)
+What it is: AWS is the cloud platform that hosts the infrastructure CloudCost Pilot observes. The project connects to an AWS account and reads billing, resource and monitoring information.
+Responsibilities:
+Provides the environment whose spending and resources are being monitored.
+Supplies APIs for cost data, EC2 instances, EBS volumes and CloudWatch metrics.
+Can host selected project components in a later deployment phase.
+How it is used: The first version connects to an existing AWS account using a dedicated, read-only IAM identity. Local development should not require creating expensive cloud infrastructure.
+Engineering note: AWS services can incur charges. Start with read-only API access and local development. Do not create paid infrastructure just to test the initial collector.
+3.2 AWS Cost Explorer
+What it is: AWS Cost Explorer is the AWS cost-management service used to retrieve historical and current-to-date cost and usage information available to the account.
+Responsibilities:
+Retrieve daily and monthly cost totals.
+Group costs by AWS service.
+Compare reporting periods.
+Provide the actual cost data used by the analytics module.
+How it is used: Python calls the Cost Explorer GetCostAndUsage API through Boto3. The collector requests a date range, granularity and grouping dimension, then normalizes the response before storing or exporting it.
+Important limitations: Cost Explorer data is not real-time and may be delayed. The application must show the reporting period, currency, cost metric and last collection time. Do not describe estimated resource prices as actual Cost Explorer charges.
+3.3 Python 3.12
+What it is: Python is the main programming language for the backend and automation logic.
+Responsibilities:
+Collect data from AWS APIs.
+Normalize and validate responses.
+Analyze costs and resource utilization.
+Generate optimization recommendations.
+Create JSON, CSV and report outputs.
+Run scheduled collection and reporting jobs.
+How it is used: The codebase is divided into modules such as aws, analyzer, database, notifications, reports and scheduler. Use functions with clear responsibilities, type hints, configuration validation and structured logging.
+Why Python: Python has a mature ecosystem for cloud automation, data processing, API integration and testing. It is suitable for building the project incrementally.
+3.4 Boto3
+What it is: Boto3 is the AWS SDK for Python. It allows Python programs to interact with AWS services through their APIs.
+Responsibilities:
+Create a Cost Explorer client.
+Describe EC2 instances and EBS volumes.
+Retrieve CloudWatch metrics.
+Read the AWS caller identity through STS.
+Handle paginated API responses where supported.
+How it is used: Use Boto3 clients for service APIs. Authentication should use the standard AWS credential provider chain, such as an AWS CLI profile locally and an IAM role in an AWS-hosted environment.
+Security note: Never place access keys in source code, commit them to Git, or bake them into a Docker image. Use least-privilege permissions and temporary credentials where possible.
+3.5 Amazon EC2 and EBS APIs
+What they are: Amazon EC2 provides virtual compute instances. Amazon EBS provides persistent block storage volumes that can be attached to EC2 instances. EBS inventory is accessed through the EC2 API.
+Responsibilities:
+Discover instance IDs, names, types, states, regions and tags.
+Identify stopped instances for review.
+Discover EBS volume size, type, state and attachment information.
+Identify volumes in the available state that are not attached.
+How they are used: The EC2 scanner calls DescribeInstances. The EBS scanner calls DescribeVolumes. Results are normalized into a common internal format and stored in PostgreSQL.
+Important limitation: A stopped EC2 instance generally stops incurring normal instance compute charges, but attached EBS storage and other associated services may still cost money. An unattached volume is a review candidate, not automatically safe to delete.
+3.6 Amazon CloudWatch
+What it is: CloudWatch is AWS's monitoring service. CloudCost Pilot uses it to retrieve infrastructure metrics, initially focusing on EC2 CPU utilization.
+Responsibilities:
+Retrieve CPUUtilization metrics.
+Calculate average and maximum CPU values over a selected time window.
+Provide evidence for underutilization recommendations.
+Support later operational alerting.
+How it is used: The Python CloudWatch module requests metrics for an instance and evaluation period. The analyzer interprets the returned datapoints using configurable rules.
+Important limitation: Low CPU alone does not prove that an instance is unnecessary. Workload patterns, memory, network, disk activity, business criticality and peak periods should also be considered before recommending a change.
+3.7 PostgreSQL
+What it is: PostgreSQL is the relational database used to retain historical information collected and generated by the platform.
+Responsibilities:
+Store daily and monthly cost records.
+Store EC2 and EBS inventory snapshots.
+Store CloudWatch metric summaries.
+Store optimization recommendations and their review status.
+Store budget settings, alerts, reports and collection-run history.
+How it is used: Python writes normalized records to PostgreSQL. Grafana queries the database to build dashboards. Use indexes, constraints and safe database access patterns to avoid duplicate or inconsistent records.
+Data design: Keep the original AWS-reported currency and reporting dates. Store estimated savings separately from actual costs. Use timestamps to track when data was collected.
+3.8 Grafana
+What it is: Grafana is the visualization and dashboard platform for CloudCost Pilot.
+Responsibilities:
+Display month-to-date spending and budget utilization.
+Visualize daily and monthly cost trends.
+Show service-level cost breakdowns.
+Display EC2 and EBS inventory metrics.
+Show recommendations, potential savings and collection health.
+How it is used: Configure PostgreSQL as a Grafana data source. Build separate dashboards for Cloud Cost Overview, Infrastructure, Optimization and Platform Operations.
+Important distinction: Grafana visualizes the data; it is not the source of AWS billing truth. The Python collectors and AWS APIs provide the underlying data.
+3.9 Docker
+What it is: Docker packages an application and its dependencies into containers so it can run consistently across supported environments.
+Responsibilities:
+Package the Python application.
+Run PostgreSQL locally.
+Run Grafana locally.
+Keep development environments reproducible.
+How it is used: Create a Dockerfile for the Python service and a Docker Compose configuration for the application, PostgreSQL and Grafana. Use environment-based configuration and persistent database volumes.
+Security note: Do not include AWS credentials in the image. Mount or inject credentials securely at runtime, and do not expose PostgreSQL or Grafana publicly by default.
+3.10 Terraform
+What it is: Terraform is an Infrastructure as Code tool. It describes infrastructure declaratively so that it can be reviewed and managed through version-controlled configuration.
+Responsibilities:
+Define a dedicated IAM role and policy.
+Define optional S3 report storage.
+Define optional CloudWatch log resources.
+Define optional Lambda and EventBridge resources in a later phase.
+How it is used: Store Terraform files in the terraform directory. Use variables, outputs and separate environments. Review terraform plan before applying changes.
+Safety note: Terraform can create billable infrastructure and modify or destroy resources. Do not run apply or destroy without reviewing the plan and obtaining approval. Protect state files and never commit sensitive state.
+3.11 GitHub Actions
+What it is: GitHub Actions is the CI/CD automation service integrated with GitHub repositories.
+Responsibilities:
+Run tests on pushes and pull requests.
+Run Ruff lint checks.
+Build Docker images.
+Run dependency and security checks.
+Support controlled deployment workflows later.
+How it is used: Create workflow files under .github/workflows. The initial pipeline should run without AWS credentials by using mocked AWS responses. For AWS deployment, prefer OIDC federation with a narrowly scoped IAM role.
+Security note: Do not store long-lived AWS access keys in GitHub secrets when OIDC federation is available. Restrict deployment permissions and protect production environments.
+3.12 Linux Cron
+What it is: Cron is a time-based scheduler available on many Unix-like systems. It runs commands at specified times.
+Responsibilities:
+Schedule daily cost collection.
+Schedule EC2 and EBS scans.
+Schedule optimization analysis.
+Schedule daily or monthly report generation.
+How it is used: Cron invokes Python scripts using the project's virtual-environment interpreter and absolute paths. Each script records its run status and logs errors.
+Reliability note: Prevent overlapping runs where necessary, use a consistent timezone, and make jobs idempotent so repeated execution does not create duplicate records.
+4. Supporting and optional technologies
+4.1 Pytest
+Pytest is the testing framework. Use it to verify cost calculations, date handling, resource detection, recommendation rules, alert thresholds and error handling. Mock AWS responses so tests are repeatable and do not require a live AWS account.
+4.2 Ruff
+Ruff is a fast Python linter and code-quality tool. Run it in local development and GitHub Actions to catch common mistakes and keep the codebase consistent.
+4.3 FastAPI (optional)
+FastAPI can provide REST endpoints if CloudCost Pilot needs a web application or another client to request data. It is not required for the first command-line cost collector. Add it when there is a clear API use case.
+4.4 Slack and email integrations
+These integrations deliver budget warnings, anomaly notifications and collection-failure messages. Keep notification delivery separate from cost analysis so a notification outage does not invalidate the underlying collected data.
+4.5 AWS Lambda (optional)
+Lambda can run selected Python tasks without managing a long-running server. It may be introduced later for lightweight scheduled or event-driven execution. The initial automation approach is Linux Cron; Lambda is an optional deployment choice, not a required dependency.
+5. How the technologies work together
+The main data flow is:
+AWS Cost Explorer, EC2, EBS and CloudWatch expose cost, inventory and performance information.
+Python and Boto3 collect the information, validate it and normalize it.
+The analysis engine calculates trends, applies configurable rules and creates recommendations.
+PostgreSQL stores historical records, findings, alerts and collection-run information.
+Grafana queries PostgreSQL and displays dashboards.
+Linux Cron triggers recurring jobs. Slack or email can deliver notifications.
+Docker packages the local services. Terraform describes optional AWS infrastructure.
+GitHub Actions tests the code and builds application images.
+6. Recommended implementation sequence
+Phase 1 — AWS Cost Data Collection: Python 3.12, Boto3, AWS CLI, IAM, Cost Explorer, JSON export, logging and tests.
+Phase 2 — Resource Discovery: EC2 and EBS APIs, CloudWatch metrics, inventory normalization and resource tests.
+Phase 3 — Optimization Engine: Rule-based analysis, pricing inputs, recommendation records and review statuses.
+Phase 4 — Automation: Linux Cron, job history, retries, idempotency and report scheduling. Consider Lambda later.
+Phase 5 — Monitoring and Alerts: Budget thresholds, anomaly rules, Slack/email delivery and alert history.
+Phase 6 — Dashboard: PostgreSQL schema, data persistence and Grafana dashboards.
+Phase 7 — Production Engineering: Docker, Docker Compose, Terraform, GitHub Actions, security checks and documentation.
+7. Key engineering principles
+Read-only first — The initial AWS identity must only read the information needed by the collectors. No automatic termination, deletion or resizing.
+Least privilege — Grant only the exact API actions required. Review permissions as features are added.
+Cost transparency — Display actual AWS charges separately from calculated estimates and potential savings.
+Data freshness — Show the reporting period and last successful collection time.
+Idempotency — Repeated collection runs should update or safely deduplicate records rather than corrupt history.
+Failure visibility — Record failed jobs and useful error details without exposing secrets.
+Human approval — Recommendations require review. Approval does not trigger a destructive cloud operation in the initial release.
+Mock-first testing — Unit tests should work without live AWS access or billable infrastructure.
+8. Initial repository structure
+cloudcost-pilot/├── app/│   ├── aws/│   ├── analyzer/│   ├── database/│   ├── notifications/│   ├── reports/│   ├── scheduler/│   └── api/├── scripts/├── dashboard/│   └── grafana/├── tests/├── terraform/├── .github/│   └── workflows/├── .env.example├── .gitignore├── Dockerfile├── docker-compose.yml├── requirements.txt├── pyproject.toml├── Makefile└── README.md
+9. Phase 1 acceptance checklist
+☐ Python 3.12 environment is configured.
+☐ AWS CLI is installed and a named profile is configured.
+☐ A dedicated least-privilege read-only IAM policy is attached.
+☐ AWS identity validation succeeds using STS GetCallerIdentity.
+☐ The application creates a Cost Explorer client through Boto3.
+☐ Daily cost data can be retrieved for a specified date range.
+☐ Monthly cost data can be retrieved for a specified date range.
+☐ Cost data can be grouped by AWS service.
+☐ Pagination is handled where the API returns a next page token.
+☐ The output preserves currency, metric and reporting dates.
+☐ The collector exports a valid JSON file.
+☐ Errors and collection timestamps are logged.
+☐ Unit tests pass using mocked AWS responses.
+☐ No AWS credentials are committed to the repository.
+10. Official documentation references
+AWS Cost Explorer API: https://docs.aws.amazon.com/cost-management/latest/APIReference/Welcome.html
+Boto3 documentation: https://boto3.amazonaws.com/v1/documentation/api/latest/index.html
+AWS IAM best practices: https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html
+Amazon EC2 API reference: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/Welcome.html
+Amazon CloudWatch documentation: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/WhatIsCloudWatch.html
+PostgreSQL documentation: https://www.postgresql.org/docs/
+Grafana documentation: https://grafana.com/docs/grafana/latest/
+Docker documentation: https://docs.docker.com/
+Terraform documentation: https://developer.hashicorp.com/terraform/docs
+GitHub Actions documentation: https://docs.github.com/actions
+pytest documentation: https://docs.pytest.org/
+Ruff documentation: https://docs.astral.sh/ruff/
+FastAPI documentation: https://fastapi.tiangolo.com/
+End of CloudCost Pilot Core Technology Guide
