@@ -108,7 +108,10 @@ def sample_collection_result() -> CostCollectionResult:
             "Amazon Simple Storage Service": Decimal("8.25"),
             "AWS Lambda": Decimal("3.15"),
         },
-        highest_cost_service=("Amazon Elastic Compute Cloud - Compute", Decimal("87.50")),
+        highest_cost_service=(
+            "Amazon Elastic Compute Cloud - Compute",
+            Decimal("87.50"),
+        ),
         results_by_time=[
             PeriodCost(
                 start_date="2026-11-01",

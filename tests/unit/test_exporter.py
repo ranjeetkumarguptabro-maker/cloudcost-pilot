@@ -35,7 +35,9 @@ def test_export_to_json_success(tmp_path: Path):
 
 
 def test_export_to_json_unserializable_data(tmp_path: Path):
-    """Verify non-serializable objects raise TypeError and do not leave corrupted files."""
+    """Verify non-serializable objects raise TypeError and do not leave
+    corrupted files.
+    """
     dest = tmp_path / "bad.json"
     data = {"bad_obj": object()}
 

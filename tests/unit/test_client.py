@@ -49,7 +49,10 @@ def test_validate_aws_identity_success(mock_sts_response):
         identity = validate_aws_identity(session)
 
     assert identity["account_id"] == "123456789012"
-    assert identity["arn"] == "arn:aws:sts::123456789012:assumed-role/CloudCostPilotRole/session"
+    assert (
+        identity["arn"]
+        == "arn:aws:sts::123456789012:assumed-role/CloudCostPilotRole/session"
+    )
     assert identity["user_id"] == "AROA123456789EXAMPLE:session-name"
 
 
@@ -62,7 +65,9 @@ def test_validate_aws_identity_no_credentials():
         stubber.add_client_error(
             "get_caller_identity",
             service_error_code="AuthFailure",
-            service_message="AWS was not able to validate the provided access credentials",
+            service_message=(
+                "AWS was not able to validate the provided access credentials"
+            ),
         )
 
         orig_client = session.client
@@ -97,7 +102,9 @@ def test_validate_aws_identity_raises_partial_credentials_error(mocker):
     mocker.patch.object(
         session,
         "client",
-        side_effect=PartialCredentialsError(provider="env", cred_var="AWS_SECRET_ACCESS_KEY"),
+        side_effect=PartialCredentialsError(
+            provider="env", cred_var="AWS_SECRET_ACCESS_KEY"
+        ),
     )
 
     with pytest.raises(AWSAuthenticationError) as exc_info:

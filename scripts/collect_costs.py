@@ -9,9 +9,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 # Ensure project root is in sys.path when executed directly as a script
-project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+if str(Path(__file__).resolve().parent.parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.analyzer.cost_analyzer import CostAnalyzer
 from app.aws.client import (
@@ -73,13 +72,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--start",
         type=parse_iso_date,
         default=None,
-        help="Start date in YYYY-MM-DD format (inclusive). Defaults to start of current month.",
+        help=(
+            "Start date in YYYY-MM-DD format (inclusive). "
+            "Defaults to start of current month."
+        ),
     )
     parser.add_argument(
         "--end",
         type=parse_iso_date,
         default=None,
-        help="End date in YYYY-MM-DD format (exclusive). Defaults to tomorrow (inclusive of today).",
+        help=(
+            "End date in YYYY-MM-DD format (exclusive). "
+            "Defaults to tomorrow (inclusive of today)."
+        ),
     )
     parser.add_argument(
         "--granularity",
@@ -97,13 +102,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=str,
         default=None,
-        help="Output JSON file destination. Defaults to data/costs_<granularity>_<start>_<end>.json.",
+        help=(
+            "Output JSON file destination. Defaults to "
+            "data/costs_<granularity>_<start>_<end>.json."
+        ),
     )
     parser.add_argument(
         "--metric",
         type=str,
         default="UnblendedCost",
-        help="Cost Explorer metric to query (UnblendedCost, BlendedCost, NetUnblendedCost, etc.).",
+        help=(
+            "Cost Explorer metric to query "
+            "(UnblendedCost, BlendedCost, NetUnblendedCost, etc.)."
+        ),
     )
     parser.add_argument(
         "--log-format",
@@ -146,7 +157,8 @@ def main() -> int:
 
     if start_date >= end_date:
         logger.error(
-            "Invalid date range: start_date (%s) must be strictly earlier than end_date (%s).",
+            "Invalid date range: start_date (%s) must be strictly earlier "
+            "than end_date (%s).",
             start_date.isoformat(),
             end_date.isoformat(),
         )
@@ -158,13 +170,18 @@ def main() -> int:
     if args.output:
         output_path = Path(args.output)
     else:
-        filename = f"costs_{granularity.lower()}_{start_date.isoformat()}_{end_date.isoformat()}.json"
+        start_str = start_date.isoformat()
+        end_str = end_date.isoformat()
+        filename = f"costs_{granularity.lower()}_{start_str}_{end_str}.json"
         output_path = settings.data_dir / filename
 
     print("=" * 70)
     print(" CloudCost Pilot — AWS Cost Explorer Collector")
     print("=" * 70)
-    print(f" Reporting Period: {start_date.isoformat()} to {end_date.isoformat()} (exclusive)")
+    print(
+        f" Reporting Period: {start_date.isoformat()} to "
+        f"{end_date.isoformat()} (exclusive)"
+    )
     print(f" Granularity:      {granularity}")
     print(f" Metric:           {args.metric}")
     print(f" Profile:          {profile or 'Default Credential Chain'}")
@@ -215,10 +232,9 @@ def main() -> int:
             )
         print("\n Top 5 Services by Spending:")
         for idx, item in enumerate(breakdown, 1):
-            print(
-                f"  {idx}. {item.service_name:<42} "
-                f"{item.amount:>10.4f} {item.currency} ({item.percentage_of_total:>5.1f}%)"
-            )
+            cost_str = f"{item.amount:>10.4f} {item.currency}"
+            pct_str = f"({item.percentage_of_total:>5.1f}%)"
+            print(f"  {idx}. {item.service_name:<42} {cost_str} {pct_str}")
 
         print("-" * 70)
         print(f" Results successfully exported to: {saved_path}")

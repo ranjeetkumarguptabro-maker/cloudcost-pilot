@@ -40,7 +40,9 @@ def test_get_service_breakdown_zero_cost(sample_collection_result):
 
 def test_analyze_daily_trends(sample_collection_result):
     """Verify daily trends calculate day-over-day changes, averages, and spikes."""
-    trends = CostAnalyzer.analyze_daily_trends(sample_collection_result, spike_multiplier=1.1)
+    trends = CostAnalyzer.analyze_daily_trends(
+        sample_collection_result, spike_multiplier=1.1
+    )
 
     assert len(trends.daily_totals) == 2
     day1 = trends.daily_totals[0]
@@ -67,7 +69,9 @@ def test_analyze_daily_trends(sample_collection_result):
 
 
 def test_compare_periods(sample_collection_result):
-    """Verify comparison between two periods calculates differences and percentage changes."""
+    """Verify comparison between two periods calculates differences and
+    percentage changes.
+    """
     # Current period: 121.00
     # Previous period: 100.00
     previous_period = sample_collection_result.model_copy(

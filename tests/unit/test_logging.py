@@ -9,7 +9,9 @@ from app.logging_config import JSONLogFormatter, TextLogFormatter, setup_logging
 
 
 def test_json_log_formatter_standard():
-    """Verify JSON log formatter generates valid single-line JSON with standard fields."""
+    """Verify JSON log formatter generates valid single-line JSON with standard
+    fields.
+    """
     formatter = JSONLogFormatter()
     record = logging.LogRecord(
         name="test_logger",

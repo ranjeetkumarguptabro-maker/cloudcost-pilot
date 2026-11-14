@@ -38,7 +38,8 @@ def export_to_json(
     target = Path(output_path).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    # Use a temporary file in the same directory to allow atomic os.replace across filesystem boundaries
+    # Use a temporary file in the same directory to allow atomic replace
+    # across filesystem boundaries
     temp_file = tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -57,7 +58,9 @@ def export_to_json(
         # Atomic rename
         temp_path = Path(temp_file.name)
         temp_path.replace(target)
-        logger.info("Successfully exported %d bytes to %s", target.stat().st_size, target)
+        logger.info(
+            "Successfully exported %d bytes to %s", target.stat().st_size, target
+        )
         return target
     except Exception as exc:
         temp_path = Path(temp_file.name)

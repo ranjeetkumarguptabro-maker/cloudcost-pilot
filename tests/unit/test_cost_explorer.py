@@ -89,10 +89,12 @@ def test_get_cost_and_usage_single_page(mock_ce_daily_response_page_2):
     assert result.highest_cost_service[1] == Decimal("42.00")
 
     # Service totals
-    assert (
-        result.service_totals["Amazon Elastic Compute Cloud - Compute"] == Decimal("42.00")
+    assert result.service_totals["Amazon Elastic Compute Cloud - Compute"] == Decimal(
+        "42.00"
     )
-    assert result.service_totals["Amazon Relational Database Service"] == Decimal("22.10")
+    assert result.service_totals["Amazon Relational Database Service"] == Decimal(
+        "22.10"
+    )
     assert result.service_totals["AWS Lambda"] == Decimal("3.15")
 
 
@@ -120,8 +122,12 @@ def test_get_cost_and_usage_pagination(
     }
 
     with Stubber(ce_client) as stubber:
-        stubber.add_response("get_cost_and_usage", mock_ce_daily_response_page_1, param_page_1)
-        stubber.add_response("get_cost_and_usage", mock_ce_daily_response_page_2, param_page_2)
+        stubber.add_response(
+            "get_cost_and_usage", mock_ce_daily_response_page_1, param_page_1
+        )
+        stubber.add_response(
+            "get_cost_and_usage", mock_ce_daily_response_page_2, param_page_2
+        )
 
         result = get_cost_and_usage(
             client=ce_client,
@@ -136,8 +142,8 @@ def test_get_cost_and_usage_pagination(
     assert result.total_cost == Decimal("121.00")
     assert len(result.results_by_time) == 2
     # Combined EC2 = 45.50 + 42.00 = 87.50
-    assert (
-        result.service_totals["Amazon Elastic Compute Cloud - Compute"] == Decimal("87.50")
+    assert result.service_totals["Amazon Elastic Compute Cloud - Compute"] == Decimal(
+        "87.50"
     )
     assert result.highest_cost_service == (
         "Amazon Elastic Compute Cloud - Compute",
@@ -198,7 +204,8 @@ def test_to_export_dict_structure(sample_collection_result):
     assert export_dict["total_cost"] == "121.00"
     assert export_dict["currency"] == "USD"
     assert (
-        export_dict["service_totals"]["Amazon Elastic Compute Cloud - Compute"] == "87.50"
+        export_dict["service_totals"]["Amazon Elastic Compute Cloud - Compute"]
+        == "87.50"
     )
     assert export_dict["highest_cost_service"] == {
         "service": "Amazon Elastic Compute Cloud - Compute",

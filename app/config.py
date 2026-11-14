@@ -17,7 +17,9 @@ class Settings(BaseModel):
     # AWS Configuration
     aws_profile: str | None = Field(
         default=None,
-        description="Named AWS CLI profile to use. If None, uses default credential chain.",
+        description=(
+            "Named AWS CLI profile to use. If None, uses default credential chain."
+        ),
     )
     aws_default_region: str = Field(
         default="us-east-1",
@@ -25,7 +27,10 @@ class Settings(BaseModel):
     )
     cost_explorer_region: str = Field(
         default="us-east-1",
-        description="AWS region for Cost Explorer API endpoint (Cost Explorer is hosted in us-east-1).",
+        description=(
+            "AWS region for Cost Explorer API endpoint "
+            "(Cost Explorer is hosted in us-east-1)."
+        ),
     )
 
     # Logging Configuration
@@ -35,7 +40,10 @@ class Settings(BaseModel):
     )
     log_format: Literal["json", "text"] = Field(
         default="json",
-        description="Format for log messages (json for structured logging, text for human-readable).",
+        description=(
+            "Format for log messages (json for structured logging, "
+            "text for human-readable)."
+        ),
     )
 
     # Storage Paths

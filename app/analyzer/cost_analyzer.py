@@ -128,7 +128,9 @@ class CostAnalyzer:
             if previous_amount is not None:
                 change_amount = amount - previous_amount
                 if previous_amount > Decimal("0.0"):
-                    change_pct = round((change_amount / previous_amount) * Decimal("100.0"), 2)
+                    change_pct = round(
+                        (change_amount / previous_amount) * Decimal("100.0"), 2
+                    )
 
             entries.append(
                 DailyTrendEntry(

@@ -65,8 +65,9 @@ def get_boto3_session(
         return session
     except ProfileNotFound as exc:
         msg = (
-            f"AWS profile '{profile_name}' was not found in ~/.aws/credentials or ~/.aws/config. "
-            "Please run 'aws configure --profile <name>' or check your configuration."
+            f"AWS profile '{profile_name}' was not found in ~/.aws/credentials "
+            "or ~/.aws/config. Please run 'aws configure --profile <name>' "
+            "or check your configuration."
         )
         logger.error(msg)
         raise AWSAuthenticationError(msg) from exc
@@ -94,7 +95,8 @@ def validate_aws_identity(session: boto3.Session) -> dict[str, str]:
         user_id = identity.get("UserId", "Unknown")
 
         logger.info(
-            "AWS credentials validated successfully. Connected as Account: %s, Identity ARN: %s",
+            "AWS credentials validated successfully. Connected as Account: %s, "
+            "Identity ARN: %s",
             account_id,
             arn,
         )
@@ -106,13 +108,17 @@ def validate_aws_identity(session: boto3.Session) -> dict[str, str]:
         }
     except NoCredentialsError as exc:
         msg = (
-            "No AWS credentials found. Please configure credentials via 'aws configure', "
-            "environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), or an IAM role."
+            "No AWS credentials found. Please configure credentials via "
+            "'aws configure', environment variables (AWS_ACCESS_KEY_ID, "
+            "AWS_SECRET_ACCESS_KEY), or an IAM role."
         )
         logger.error(msg)
         raise AWSAuthenticationError(msg) from exc
     except PartialCredentialsError as exc:
-        msg = "Incomplete AWS credentials found. Both access key and secret key are required."
+        msg = (
+            "Incomplete AWS credentials found. Both access key and secret key "
+            "are required."
+        )
         logger.error(msg)
         raise AWSAuthenticationError(msg) from exc
     except ClientError as exc:

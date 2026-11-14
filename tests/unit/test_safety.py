@@ -15,7 +15,9 @@ from app.logging_config import sanitize_message
 
 
 def test_no_destructive_aws_methods_defined():
-    """Verify no destructive API actions (terminate, delete, stop) exist in AWS modules."""
+    """Verify no destructive API actions (terminate, delete, stop) exist in
+    AWS modules.
+    """
     prohibited_keywords = [
         "terminate_instances",
         "delete_volume",
@@ -29,22 +31,30 @@ def test_no_destructive_aws_methods_defined():
         functions = inspect.getmembers(module, inspect.isfunction)
         for name, _ in functions:
             for kw in prohibited_keywords:
-                assert kw not in name.lower(), f"Prohibited destructive action '{kw}' found in {name}"
+                assert kw not in name.lower(), (
+                    f"Prohibited destructive action '{kw}' found in {name}"
+                )
 
 
 def test_log_sanitization_redacts_credentials():
     """Verify sensitive tokens and keys are sanitized from log messages."""
-    sensitive_msg = "Error connecting with aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    sensitive_msg = (
+        "Error connecting with "
+        "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    )
     sanitized = sanitize_message(sensitive_msg)
     assert "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" not in sanitized
     assert "REDACTED" in sanitized
 
 
 def test_actual_costs_not_labeled_as_estimated_savings(sample_collection_result):
-    """Verify CostCollectionResult strictly tracks actual costs without mixing estimated savings."""
+    """Verify CostCollectionResult strictly tracks actual costs without mixing
+    estimated savings.
+    """
     export_dict = sample_collection_result.to_export_dict()
 
-    # The billing export must clearly identify actual recorded metrics and not present them as savings
+    # The billing export must clearly identify actual recorded metrics and not
+    # present them as savings
     assert "total_cost" in export_dict
     assert "metric" in export_dict
     assert export_dict["metric"] == "UnblendedCost"

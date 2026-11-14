@@ -22,7 +22,9 @@ class ServiceCost(BaseModel):
     """Cost breakdown for a specific AWS service."""
 
     service_name: str
-    amount: Decimal = Field(description="Decimal cost amount to prevent floating-point inaccuracy")
+    amount: Decimal = Field(
+        description="Decimal cost amount to prevent floating-point inaccuracy"
+    )
     currency: str
 
 
@@ -65,7 +67,10 @@ class CostCollectionResult(BaseModel):
             "total_cost": str(self.total_cost),
             "service_totals": {k: str(v) for k, v in self.service_totals.items()},
             "highest_cost_service": (
-                {"service": self.highest_cost_service[0], "amount": str(self.highest_cost_service[1])}
+                {
+                    "service": self.highest_cost_service[0],
+                    "amount": str(self.highest_cost_service[1]),
+                }
                 if self.highest_cost_service
                 else None
             ),
@@ -104,7 +109,8 @@ def validate_granularity(granularity: str) -> None:
     """Validate that granularity is supported by AWS Cost Explorer."""
     if granularity not in SUPPORTED_GRANULARITIES:
         raise ValueError(
-            f"Invalid granularity '{granularity}'. Supported values: {SUPPORTED_GRANULARITIES}"
+            f"Invalid granularity '{granularity}'. "
+            f"Supported values: {SUPPORTED_GRANULARITIES}"
         )
 
 
@@ -199,7 +205,8 @@ def get_cost_and_usage(
         raise AWSClientError(msg) from exc
 
     logger.info(
-        "Successfully retrieved %d time period record(s) across %d page(s) from Cost Explorer.",
+        "Successfully retrieved %d time period record(s) across %d page(s) "
+        "from Cost Explorer.",
         len(raw_results),
         page_count,
     )
@@ -250,7 +257,11 @@ def _normalize_cost_results(
             try:
                 amount_decimal = Decimal(amount_str)
             except Exception:
-                logger.warning("Invalid cost amount '%s' for service '%s'", amount_str, service_name)
+                logger.warning(
+                    "Invalid cost amount '%s' for service '%s'",
+                    amount_str,
+                    service_name,
+                )
                 amount_decimal = Decimal("0.0")
 
             period_services.append(
@@ -262,7 +273,8 @@ def _normalize_cost_results(
             )
             period_total += amount_decimal
             overall_service_totals[service_name] = (
-                overall_service_totals.get(service_name, Decimal("0.0")) + amount_decimal
+                overall_service_totals.get(service_name, Decimal("0.0"))
+                + amount_decimal
             )
 
         # Sort services in period descending by amount
@@ -282,7 +294,9 @@ def _normalize_cost_results(
     # Determine highest cost service
     highest_cost_service: tuple[str, Decimal] | None = None
     if overall_service_totals:
-        highest_cost_service = max(overall_service_totals.items(), key=lambda item: item[1])
+        highest_cost_service = max(
+            overall_service_totals.items(), key=lambda item: item[1]
+        )
 
     # Sort overall service totals descending
     sorted_service_totals = dict(

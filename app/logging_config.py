@@ -11,7 +11,9 @@ from typing import Any
 
 # Sensitive patterns to sanitize from log records
 SENSITIVE_PATTERNS = [
-    re.compile(r"(?i)(secret|password|access_key|token|auth|credential)['\":\s=]+([^'\"\s,;]+)"),
+    re.compile(
+        r"(?i)(secret|password|access_key|token|auth|credential)['\":\s=]+([^'\"\s,;]+)"
+    ),
 ]
 
 
