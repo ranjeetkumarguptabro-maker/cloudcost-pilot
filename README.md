@@ -215,7 +215,10 @@ make lint
 # Run Ruff code formatter
 make format
 ```
+## Project Development
 
+CloudCost Pilot helps monitor AWS infrastructure costs
+and identify opportunities for cloud cost optimization.
 ---
 
 ## Roadmap
