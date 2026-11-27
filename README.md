@@ -1,7 +1,7 @@
 # CloudCost Pilot
 > **Monitor. Analyze. Optimize. Every Cloud Euro Counts.**
 
-**CloudCost Pilot** is an open-source, production-minded Cloud Cost Monitoring , Analysis & Optimization Platform built for DevOps, Cloud, and FinOps engineers. It helps teams understand actual AWS spending, discover infrastructure resources, analyze utilization metrics, and generate actionable cost optimization recommendations.
+**CloudCost Pilot** is an open-source, production-minded Cloud Cost Monitoring , Analysis & Optimization Platform built for DevOps, Cloud, and FinOps engineers. It helps teams understand actual AWS spending, . discover infrastructure resources, analyze utilization metrics, and generate actionable cost optimization recommendations.
 
 ---
 
@@ -215,7 +215,10 @@ make lint
 # Run Ruff code formatter
 make format
 ```
+## Project Development
 
+CloudCost Pilot helps monitor AWS infrastructure costs
+and identify opportunities for cloud cost optimization.
 ---
 
 ## Roadmap
