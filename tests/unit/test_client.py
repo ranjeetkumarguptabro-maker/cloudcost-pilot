@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import boto3
 import pytest
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
@@ -85,30 +87,28 @@ def test_validate_aws_identity_no_credentials():
         assert "Failed to authenticate with AWS STS" in str(exc_info.value)
 
 
-def test_validate_aws_identity_raises_no_credentials_error(mocker):
+def test_validate_aws_identity_raises_no_credentials_error():
     """Verify NoCredentialsError from boto3 is caught and wrapped."""
     session = boto3.Session(region_name="us-east-1")
-    mocker.patch.object(session, "client", side_effect=NoCredentialsError())
-
-    with pytest.raises(AWSAuthenticationError) as exc_info:
-        validate_aws_identity(session)
+    with patch.object(session, "client", side_effect=NoCredentialsError()):
+        with pytest.raises(AWSAuthenticationError) as exc_info:
+            validate_aws_identity(session)
 
     assert "No AWS credentials found" in str(exc_info.value)
 
 
-def test_validate_aws_identity_raises_partial_credentials_error(mocker):
+def test_validate_aws_identity_raises_partial_credentials_error():
     """Verify PartialCredentialsError from boto3 is caught and wrapped."""
     session = boto3.Session(region_name="us-east-1")
-    mocker.patch.object(
+    with patch.object(
         session,
         "client",
         side_effect=PartialCredentialsError(
             provider="env", cred_var="AWS_SECRET_ACCESS_KEY"
         ),
-    )
-
-    with pytest.raises(AWSAuthenticationError) as exc_info:
-        validate_aws_identity(session)
+    ):
+        with pytest.raises(AWSAuthenticationError) as exc_info:
+            validate_aws_identity(session)
 
     assert "Incomplete AWS credentials found" in str(exc_info.value)
 
